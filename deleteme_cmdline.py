@@ -1,3 +1,4 @@
+import inspect
 import argparse
 
 import deleteme_funcs
@@ -11,23 +12,33 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(dest='subparser_name', required=True,
                                        help='sub-command help')
 
-    parser_myfunc = subparsers.add_parser('myfunc', help='myfunc help')
-    parser_myfunc.add_argument('a')
-    parser_myfunc.add_argument('--b', default=2)
+    # create the subparsers and populate them with the correct arguments
+    funcs_to_subcommand = inspect.getmembers(deleteme_funcs, inspect.isfunction)
+    for name, func in funcs_to_subcommand:
+        subparser = subparsers.add_parser(name, help=func.__doc__)
+        for parname, arg in inspect.signature(func).parameters.items():
+            sanitized_name = parname.replace('_', '-')
+            if arg.default == inspect.Signature.empty:
+                subparser.add_argument(sanitized_name)
+            else:
+                subparser.add_argument('--' + sanitized_name,
+                                       default=arg.default)
 
-
-    parser_myfunc2 = subparsers.add_parser('myfunc2', help='myfunc2 help')
-    parser_myfunc2.add_argument('a')
-    parser_myfunc2.add_argument('--c', default=3)
-
+    # now actually parse the arguments
     args = parser.parse_args()
 
     # set the global
     deleteme_funcs.GLOBAL_SETTING = args.global_setting
 
-    if args.subparser_name == 'myfunc':
-        deleteme_funcs.myfunc(args.a, args.b)
-    elif args.subparser_name == 'myfunc2':
-        deleteme_funcs.myfunc2(args.a, args.c)
+    # and call the function
+    for name, func in funcs_to_subcommand:
+        if args.subparser_name == name:
+            # make a dictionary containing the correct inputs to the function,
+            # extracted from the parsed arguments
+            funcargs = {}
+            for parname in inspect.signature(func).parameters:
+                funcargs[parname] = getattr(args, parname.replace('-', '_'))
+            func(**funcargs)
+            break  # drop out immediately, which skips the "else" below
     else:
         assert False, 'Invalid subparser! This should be impossible...'
